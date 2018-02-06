@@ -1,10 +1,11 @@
 <?php
 
 namespace App\Http\Controllers;
-use GuzzleHttp\Client as GuzzleClient;
-use GuzzleHttp\Exception\RequestException;
+use App\Cnpj;
+use App\Transformers\CnpjTransform;
 use Illuminate\Http\Request;
 use Mockery\Exception;
+use Illuminate\Database\Eloquent\toJson;
 
 class ReceitaController extends Controller
 {
@@ -26,24 +27,6 @@ class ReceitaController extends Controller
      */
     public function index()
     {
-
-        try {
-
-            $client = new GuzzleClient();
-            $response = $client->request('GET', 'https://www.receitaws.com.br/v1/cnpj/08075074000107');
-            $content = json_decode($response->getBody());
-
-            if(isset($content->message)) {
-                $dados = $content->message;
-            } else {
-                $dados = $content;
-            }
-
-        } catch (RequestException $e) {
-
-            return $e;
-        }
-        return view('receita')->with('dados', $dados);
     }
 
     /**
@@ -62,9 +45,13 @@ class ReceitaController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
+    public function store($cnpjNumero, $content)
     {
         //
+        Cnpj::create([
+            'cnpj' => $cnpjNumero,
+            'retorno_api' => $content,
+        ]);
     }
 
     /**
@@ -75,7 +62,33 @@ class ReceitaController extends Controller
      */
     public function show($id)
     {
-        //
+        $cnpj = Cnpj::where('cnpj', '=', $id)->first();
+
+        if(empty($cnpj)) {
+
+            $dadosCnpj = Cnpj::buscaCnpjNoReceitaWs($id);
+            $cnpjNumero = Cnpj::cnpjSemCaracteres($dadosCnpj['cnpj']);
+            $content = collect($dadosCnpj)->toJson();
+
+            $this->store($cnpjNumero, $content);
+            $cnpj = new CnpjTransform($dadosCnpj);
+
+            return json_decode($cnpj,true);
+        }else{
+
+            $dadosCnpj = Cnpj::buscaCnpjNoReceitaWs($id);
+            $content = collect($dadosCnpj)->toJson();
+            $this->update($id, $content);
+
+            $cnpj = new CnpjTransform($dadosCnpj);
+
+            return json_decode($cnpj,true);
+//            $cnpjNumero = preg_replace( '/[^0-9]/', '', $content['cnpj'] );
+//            $dadosCnpj = collect($dadosCnpj)->toJson();
+//            $retorno = $dadosCnpj['nome'] . " - " . $dadosCnpj['uf'];
+//            return $retorno;
+        }
+//        return $content['atividade_principal'][0]['text'];
     }
 
     /**
@@ -96,9 +109,13 @@ class ReceitaController extends Controller
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, $id)
+    public function update($id, $content)
     {
         //
+        $cnpj = Cnpj::where('cnpj', '=', $id)->first();
+        $cnpj->retorno_api = $content;
+        $cnpj->updated_at = time();
+        $cnpj->save();
     }
 
     /**
